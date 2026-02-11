@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { LogIn, Loader2 } from 'lucide-react';
+import { createBrowserClient } from '@supabase/ssr';
+
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,6 +18,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Initialize the specific SSR Browser Client
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,11 +39,18 @@ export default function LoginPage() {
       if (error) throw error;
 
       if (data.user) {
-        router.push('/');
-        router.refresh();
+        // --- CRITICAL VIBE CODING FIX ---
+        // 1. Refresh forces the Proxy to re-run and see the new cookie
+        router.refresh(); 
+        
+        // 2. Small timeout ensures the cookie is written to disk on Windows 
+        // before the redirect happens.
+        setTimeout(() => {
+          router.push('/dashboard');
+        }, 100);
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to login. Please check your credentials.');
+      setError(err.message || 'Failed to login.');
     } finally {
       setLoading(false);
     }
@@ -104,7 +118,7 @@ export default function LoginPage() {
               )}
             </Button>
             <div className="text-center text-sm text-slate-400">
-              Don't have an account?{' '}
+              Don&apos;t have an account?{' '}
               <Link href="/signup" className="text-cyan-400 hover:text-cyan-300 font-semibold">
                 Sign up
               </Link>

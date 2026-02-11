@@ -47,21 +47,30 @@ export default function DashboardPage() {
 
   const loadDashboard = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      // 1. Use the standard getUser (it's async)
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-      if (!user) {
+      if (authError || !user) {
+        console.log("No user found, redirecting...");
         router.push('/login');
         return;
       }
 
-      const { data: profileData } = await supabase
+      // 2. Fetch profile data
+      // Note: Use 'interview_history' (snake_case) to match Postgres convention
+      const { data: profileData, error: dbError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .maybeSingle();
 
+      if (dbError) throw dbError;
+
       setProfile(profileData);
+      
+      // Handle the case where interview_history might be null
       setInterviewHistory(profileData?.interview_history || []);
+      
     } catch (err) {
       console.error('Dashboard load error:', err);
     } finally {

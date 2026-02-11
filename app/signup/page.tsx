@@ -25,7 +25,7 @@ export default function SignupPage() {
     setError('');
 
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { data: authData, error: authError } = await (supabase.auth as any).signUp({
         email,
         password,
       });

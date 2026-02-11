@@ -1,51 +1,50 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { NextRequest, NextResponse } from 'next/server';
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { NextResponse } from "next/server";
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
 
-export async function POST(request: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const { messages, resumeData, interviewHistory } = await request.json();
+    const { messages } = await req.json();
+    
+    // LOG 1: Check if request reached the server
+    console.log("API: Received request with", messages.length, "messages");
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash",
+      generationConfig: { maxOutputTokens: 200 }
+    });
 
-    const systemPrompt = `You are a strict, professional technical recruiter conducting an in-depth interview.
+    // We transform your message history into a simple prompt string for Gemini
+    const chatHistory = messages
+      .map((m: any) => `${m.role === 'user' ? 'Candidate' : 'Interviewer'}: ${m.content}`)
+      .join('\n');
 
-CANDIDATE PROFILE:
-- Skills: ${resumeData.skills?.join(', ') || 'Not specified'}
-- Projects: ${JSON.stringify(resumeData.projects || [], null, 2)}
-
-YOUR ROLE:
-1. Ask deep, project-specific questions based on their resume
-2. Probe technical details, architectural decisions, and problem-solving approaches
-3. Challenge vague answers and request specific examples
-4. Assess both technical depth and communication clarity
-5. Be professional but demanding - this is a senior-level interview
-
-INTERVIEW STYLE:
-- Start with resume verification, then dive into technical depth
-- Ask follow-up questions to clarify unclear answers
-- Request code examples or system design explanations when relevant
-- Evaluate their ability to explain complex concepts clearly
-
-Keep your questions focused and professional. Ask ONE question at a time.`;
-
-    const conversationHistory = messages
-      .map((msg: any) => `${msg.role === 'user' ? 'Candidate' : 'Interviewer'}: ${msg.content}`)
-      .join('\n\n');
-
-    const prompt = `${systemPrompt}\n\nCONVERSATION SO FAR:\n${conversationHistory}\n\nInterviewer:`;
+    const prompt = `
+      You are an expert technical interviewer. 
+      Based on the conversation history below, ask the NEXT follow-up question.
+      
+      RULES:
+      1. Be concise (1-2 sentences).
+      2. If the candidate was vague, ask for technical specifics.
+      3. Do not break character.
+      
+      CONVERSATION HISTORY:
+      ${chatHistory}
+      
+      NEXT INTERVIEWER QUESTION:
+    `;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
-    const text = response.text();
+    const aiText = response.text().trim();
 
-    return NextResponse.json({ message: text });
+    // LOG 2: Check AI output
+    console.log("API: Gemini responded with:", aiText);
+
+    return NextResponse.json({ message: aiText });
   } catch (error: any) {
-    console.error('Chat error:', error);
-    return NextResponse.json(
-      { error: 'Failed to generate response', details: error.message },
-      { status: 500 }
-    );
+    console.error("API ERROR:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

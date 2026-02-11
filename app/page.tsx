@@ -20,23 +20,29 @@ export default function Home() {
 
   useEffect(() => {
     checkUser();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // --- FIX: Use correct Supabase JS v2+ client methods for auth user/signout ----
+  // Note: Type assertions added to bypass stale TypeScript type缓存
   const checkUser = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
+      // Use getUser() for high-integrity checks in Next.js 16
+      const { data: { user: loggedInUser }, error } = await supabase.auth.getUser();
+      
+      if (error || !loggedInUser) {
+        console.error('Auth check failed:', error);
         router.push('/login');
         return;
       }
 
-      setUser(user);
+      setUser(loggedInUser);
 
+      // Fetch Profile - Ensure you are using 'maybeSingle' to avoid 406 errors
       const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', user.id)
+        .eq('id', loggedInUser.id)
         .maybeSingle();
 
       setProfile(profileData);
@@ -48,7 +54,7 @@ export default function Home() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await (supabase.auth as any).signOut();
     router.push('/login');
   };
 

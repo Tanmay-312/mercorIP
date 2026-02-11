@@ -2,90 +2,74 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+// Configuration
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+// Use SERVICE_ROLE_KEY for server-side updates to bypass RLS issues
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+const getSupabaseAdmin = () => {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Server configuration error: Missing Supabase credentials');
+  }
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+};
+
+const getModel = () => {
+  if (!GOOGLE_API_KEY) throw new Error('Missing GOOGLE_API_KEY');
+  const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
+  // Using 1.5-flash for faster, cheaper analysis with high reasoning
+  return genAI.getGenerativeModel({ 
+    model: 'gemini-1.5-flash',
+    generationConfig: { responseMimeType: "application/json" } // Force JSON mode
+  });
+};
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId, transcript, duration, avgResponseTime, interviewHistory } = await request.json();
+    const body = await request.json();
+    const { userId, transcript, duration, avgResponseTime, interviewHistory = [] } = body;
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    if (!userId || !transcript) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
 
-    const analysisPrompt = `As a senior technical recruiter, analyze this interview transcript and provide:
+    const model = getModel();
+    const supabase = getSupabaseAdmin();
 
-1. Overall Performance Score (1-10)
-2. Technical Depth Score (1-10)
-3. Communication Clarity Score (1-10)
-4. Key Strengths (2-3 points)
-5. Areas for Improvement (2-3 points)
-6. Three Actionable Tips for the next interview
+    const analysisPrompt = `
+      You are a Senior Technical Interviewer. Analyze the following transcript.
+      
+      TRANSCRIPT: ${transcript}
+      METRICS: Duration ${duration}m, Avg Response ${avgResponseTime}s.
+      
+      Compare against recent history if available: ${JSON.stringify(interviewHistory.slice(-2))}
 
-INTERVIEW TRANSCRIPT:
-${transcript}
-
-INTERVIEW METRICS:
-- Duration: ${duration.toFixed(2)} minutes
-- Average Response Time: ${avgResponseTime.toFixed(2)} seconds
-
-${interviewHistory.length > 0 ? `
-PREVIOUS INTERVIEW HISTORY (for comparison):
-${JSON.stringify(interviewHistory.slice(-3), null, 2)}
-
-Please compare this interview with previous ones and highlight:
-- Technical growth or decline
-- Improvement in communication
-- Consistency in performance
-- Specific areas showing progress
-` : 'This is the candidate\'s first interview.'}
-
-Format your response as JSON with this structure:
-{
-  "overallScore": <number>,
-  "technicalDepth": <number>,
-  "communication": <number>,
-  "strengths": ["strength1", "strength2"],
-  "improvements": ["improvement1", "improvement2"],
-  "actionableTips": ["tip1", "tip2", "tip3"],
-  "comparisonNotes": "Brief comparison with previous interviews or 'First interview' if none",
-  "summary": "A brief 2-3 sentence overall summary"
-}`;
+      Output ONLY valid JSON with this schema:
+      {
+        "overallScore": number,
+        "technicalDepth": number,
+        "communication": number,
+        "strengths": string[],
+        "improvements": string[],
+        "actionableTips": string[],
+        "comparisonNotes": string,
+        "summary": string
+      }
+    `;
 
     const result = await model.generateContent(analysisPrompt);
     const response = await result.response;
     const text = response.text();
 
-    let analysis;
-    try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        analysis = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('No JSON found in response');
-      }
-    } catch (parseError) {
-      analysis = {
-        overallScore: 7,
-        technicalDepth: 7,
-        communication: 7,
-        strengths: ['Good technical knowledge', 'Clear communication'],
-        improvements: ['Provide more specific examples', 'Elaborate on technical decisions'],
-        actionableTips: [
-          'Prepare specific project examples with metrics',
-          'Practice explaining complex concepts simply',
-          'Review common system design patterns',
-        ],
-        comparisonNotes: interviewHistory.length === 0 ? 'First interview' : 'Showing steady progress',
-        summary: 'Solid interview performance with room for improvement in technical depth.',
-      };
-    }
+    // Clean JSON parsing (handles potential Markdown backticks)
+    const cleanedText = text.replace(/```json|```/g, "").trim();
+    const analysis = JSON.parse(cleanedText);
 
     const interviewRecord = {
       date: new Date().toISOString(),
-      duration: duration,
-      avgResponseTime: avgResponseTime,
+      duration: Number(duration.toFixed(2)),
+      avgResponseTime: Number(avgResponseTime.toFixed(2)),
       scores: {
         overall: analysis.overallScore,
         technical: analysis.technicalDepth,
@@ -96,13 +80,12 @@ Format your response as JSON with this structure:
       actionableTips: analysis.actionableTips,
       comparisonNotes: analysis.comparisonNotes,
       summary: analysis.summary,
-      transcript: transcript.slice(0, 1000),
+      // Store full transcript if needed, but slice to avoid column limits
+      transcript: transcript.slice(0, 2000), 
     };
 
-    const updatedHistory = [...interviewHistory, interviewRecord];
-    if (updatedHistory.length > 10) {
-      updatedHistory.shift();
-    }
+    // Keep only last 10 interviews to prevent DB row bloating
+    const updatedHistory = [...interviewHistory, interviewRecord].slice(-10);
 
     const { error: updateError } = await supabase
       .from('profiles')
@@ -111,16 +94,10 @@ Format your response as JSON with this structure:
 
     if (updateError) throw updateError;
 
-    return NextResponse.json({
-      success: true,
-      analysis,
-      interviewRecord,
-    });
+    return NextResponse.json({ success: true, analysis });
+
   } catch (error: any) {
-    console.error('Analysis error:', error);
-    return NextResponse.json(
-      { error: 'Failed to analyze interview', details: error.message },
-      { status: 500 }
-    );
+    console.error('Analysis Pipeline Error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
