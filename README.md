@@ -1,3 +1,16 @@
+<div align="center">
+
+# 🚀 Mercor IP
+
+**[🏠 Home](https://github.com/tanmay-312/mercorIP)** •
+**[🏗️ Architecture](https://github.com/tanmay-312/mercorIP/wiki/Architecture)** •
+**[🗺️ Roadmap](https://github.com/tanmay-312/mercorIP/wiki/Roadmap)** •
+**[🤝 Contributing](https://github.com/tanmay-312/mercorIP/blob/main/CONTRIBUTING.md)**
+
+---
+
+</div>
+
 # 🤖 AI Domain Expert Interviewer
 
 > An intelligent, real-time mock interview platform that dynamically reads your resume and uses AI to conduct a technical, voice-first interview—tailored strictly to your domain expertise.
@@ -64,7 +77,3 @@ A `Dockerfile` is included for containerized deployment, though the project is f
 docker build -t mercorIP .
 docker run -p 3000:3000 --env-file .env mercorIP
 ```
-
-## 📜 License
-
-MIT License.
