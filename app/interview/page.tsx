@@ -20,11 +20,18 @@ export default function InterviewPage() {
   const [sending, setSending] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<any>(null);
+  const [isEnding, setIsEnding] = useState(false);
 
   // Refs for logic (prevents stale closures)
   const recognitionRef = useRef<any>(null);
+  const isListeningRef = useRef(false);
   const transcriptRef = useRef(''); 
   const lastQuestionTimeRef = useRef(Date.now());
+  const startTimeRef = useRef(Date.now());
+  const fullTranscriptRef = useRef('');
+
   const [lastResponseTime, setLastResponseTime] = useState(0);
   const [responseTimes, setResponseTimes] = useState<number[]>([]);
 
@@ -34,6 +41,7 @@ export default function InterviewPage() {
       recognitionRef.current?.stop();
       if (stream) stream.getTracks().forEach(t => t.stop());
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const setupInterview = async () => {
@@ -41,10 +49,20 @@ export default function InterviewPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return router.push('/login');
 
+      // Fetch Profile
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .maybeSingle();
+      
+      setProfile(profileData);
+
       // Initialize Speech Recognition
       const SpeechRecognition = (window as any).WebkitSpeechRecognition || (window as any).SpeechRecognition;
       if (!SpeechRecognition) {
         setError("Speech Recognition not supported in this browser.");
+        setLoading(false);
         return;
       }
 
@@ -64,14 +82,23 @@ export default function InterviewPage() {
       };
 
       recognition.onerror = (event: any) => {
-        if (event.error === 'network') {
-          console.error("Speech Network Error - Restarting...");
-          if (isListening) setTimeout(() => recognition.start(), 1000);
+        console.error("Speech Error:", event.error);
+        if (event.error === 'not-allowed') {
+          setError("Microphone access denied. Please allow microphone access.");
+          setIsListening(false);
+          isListeningRef.current = false;
+        } else if (event.error === 'network') {
+          setError("Speech recognition network error. This browser may not support the API. Click the mic to try again.");
+          setIsListening(false);
+          isListeningRef.current = false;
         }
+        // no-speech errors are ignored and rely on onend to restart
       };
 
       recognition.onend = () => {
-        if (isListening) recognition.start();
+        if (isListeningRef.current) {
+          try { setTimeout(() => recognition.start(), 250); } catch(e) {}
+        }
       };
 
       recognitionRef.current = recognition;
@@ -81,7 +108,9 @@ export default function InterviewPage() {
       setStream(media);
 
       // Start Interview
-      setMessages([{ role: 'assistant', content: "Hello. I'm ready to begin. Please describe your experience with the technologies mentioned in your resume." }]);
+      const initialMessage = "Hello. I'm ready to begin. Please describe your experience with the technologies mentioned in your resume.";
+      setMessages([{ role: 'assistant', content: initialMessage }]);
+      fullTranscriptRef.current += `Interviewer: ${initialMessage}\n`;
     } catch (err) {
       setError("Please allow Camera and Microphone access.");
     } finally {
@@ -92,10 +121,12 @@ export default function InterviewPage() {
   const handleMicToggle = () => {
     if (isListening) {
       setIsListening(false);
+      isListeningRef.current = false;
       recognitionRef.current?.stop();
     } else {
       setIsListening(true);
-      recognitionRef.current?.start();
+      isListeningRef.current = true;
+      try { recognitionRef.current?.start(); } catch(e) {}
     }
   };
 
@@ -111,6 +142,7 @@ export default function InterviewPage() {
     if (isListening) {
       recognitionRef.current?.stop();
       setIsListening(false);
+      isListeningRef.current = false;
     }
 
     // Pacing metrics
@@ -123,22 +155,30 @@ export default function InterviewPage() {
     const userMsg = { role: 'user', content: finalInput };
     const updatedMessages = [...messages, userMsg];
     setMessages(updatedMessages);
+    fullTranscriptRef.current += `Candidate: ${finalInput}\n`;
     
     // Clear for next round
     transcriptRef.current = '';
     setDisplayText('');
 
     try {
+      const elapsedMinutes = (Date.now() - startTimeRef.current) / 60000;
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: updatedMessages }),
+        body: JSON.stringify({ 
+           messages: updatedMessages,
+           resumeContext: profile?.resume_metadata?.resumeText || "No resume provided.",
+           detectedSkills: profile?.skills || [],
+           elapsedMinutes
+        }),
       });
 
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
       setMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
+      fullTranscriptRef.current += `Interviewer: ${data.message}\n`;
       lastQuestionTimeRef.current = Date.now();
     } catch (err: any) {
       setError("AI failed to respond. Please try again.");
@@ -150,8 +190,80 @@ export default function InterviewPage() {
     }
   };
 
-  const [loading, setLoading] = useState(true);
-  if (loading) return <div className="h-screen bg-slate-900 flex items-center justify-center"><Loader2 className="animate-spin text-cyan-500" /></div>;
+  const handleEndSession = async () => {
+    if (isEnding) return;
+    setIsEnding(true);
+    setError('');
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return router.push('/login');
+
+      if (stream) stream.getTracks().forEach(t => t.stop());
+
+      const durationMinutes = (Date.now() - startTimeRef.current) / 60000;
+      const avgResponse = responseTimes.length > 0 ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length : 0;
+
+      const res = await fetch('/api/analyze-interview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          transcript: fullTranscriptRef.current,
+          duration: durationMinutes,
+          avgResponseTime: avgResponse,
+          interviewHistory: profile?.interview_history || []
+        }),
+      });
+
+      if (!res.ok) throw new Error("Failed to load interview analysis from server.");
+      
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      if (data.analysis) {
+        const interviewRecord = {
+          date: new Date().toISOString(),
+          duration: Number(durationMinutes.toFixed(2)),
+          avgResponseTime: Number(avgResponse.toFixed(2)),
+          scores: {
+            overall: data.analysis.overallScore,
+            technical: data.analysis.technicalDepth,
+            communication: data.analysis.communication,
+          },
+          strengths: data.analysis.strengths,
+          improvements: data.analysis.improvements,
+          actionableTips: data.analysis.actionableTips,
+          comparisonNotes: data.analysis.comparisonNotes,
+          summary: data.analysis.summary,
+          transcript: fullTranscriptRef.current.slice(0, 2000), 
+        };
+
+        const updatedHistory = [...(profile?.interview_history || []), interviewRecord].slice(-10);
+
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ interview_history: updatedHistory })
+          .eq('id', user.id);
+        
+        if (updateError) throw updateError;
+      }
+
+      router.push('/dashboard');
+    } catch (err: any) {
+      setError(err.message || "Failed to end session cleanly");
+      setIsEnding(false);
+    }
+  };
+
+  if (loading || isEnding) {
+    return (
+      <div className="h-screen bg-slate-900 flex flex-col space-y-4 items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-cyan-500" />
+        {isEnding && <p className="text-cyan-400 font-mono text-sm animate-pulse">Analyzing interview...</p>}
+      </div>
+    );
+  }
 
   return (
     <div className="h-full bg-slate-900 text-white flex flex-col overflow-hidden font-sans">
@@ -160,7 +272,7 @@ export default function InterviewPage() {
           <Video className="w-5 h-5" /> 
           <span>DOMAIN EXPERT INTERVIEW</span>
         </div>
-        <Button variant="destructive" size="sm" onClick={() => router.push('/dashboard')}>
+        <Button variant="destructive" size="sm" onClick={handleEndSession} disabled={isEnding}>
           <StopCircle className="w-4 h-4 mr-2" /> End Session
         </Button>
       </nav>
@@ -186,16 +298,29 @@ export default function InterviewPage() {
 
             {/* User Interaction Zone */}
             <div className="pt-8 space-y-6">
-              <div className="min-h-[60px] p-4 bg-slate-800/30 rounded-xl border border-slate-700/50 text-center">
+              <div className="min-h-[60px] p-4 bg-slate-800/30 rounded-xl border border-slate-700/50 flex flex-col items-center justify-center relative">
                 {isListening ? (
-                  <p className="text-cyan-400 animate-pulse font-mono text-sm">
+                  <p className="text-cyan-400 animate-pulse font-mono text-sm mb-2 w-full text-center">
                     ● LISTENING: {displayText || "..."}
                   </p>
                 ) : (
-                  <p className="text-slate-500 font-mono text-sm">
-                    {displayText ? "TRANSCRIPTION READY" : "CLICK MIC TO START SPEAKING"}
+                  <p className="text-slate-500 font-mono text-sm mb-2 w-full text-center">
+                    {displayText ? "TRANSCRIPTION READY" : "CLICK MIC OR TYPE BELOW"}
                   </p>
                 )}
+                
+                {/* Fallback Text Input */}
+                <textarea
+                  className="w-full bg-slate-900/50 border border-slate-600 rounded-lg p-3 text-white placeholder-slate-500 font-sans mt-2 focus:ring-1 focus:ring-cyan-500 focus:outline-none resize-none transition-all"
+                  rows={3}
+                  placeholder="Type your answer here if microphone is unavailable..."
+                  value={displayText}
+                  onChange={(e) => {
+                     setDisplayText(e.target.value);
+                     transcriptRef.current = e.target.value;
+                  }}
+                  disabled={isListening || sending}
+                />
               </div>
 
               <div className="flex justify-center gap-8 items-center">

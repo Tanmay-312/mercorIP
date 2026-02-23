@@ -1,26 +1,15 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 
 // Configuration
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-// Use SERVICE_ROLE_KEY for server-side updates to bypass RLS issues
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-const getSupabaseAdmin = () => {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('Server configuration error: Missing Supabase credentials');
-  }
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-};
 
 const getModel = () => {
   if (!GOOGLE_API_KEY) throw new Error('Missing GOOGLE_API_KEY');
   const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
   // Using 1.5-flash for faster, cheaper analysis with high reasoning
   return genAI.getGenerativeModel({ 
-    model: 'gemini-1.5-flash',
+    model: 'gemini-2.5-flash-lite',
     generationConfig: { responseMimeType: "application/json" } // Force JSON mode
   });
 };
@@ -35,7 +24,6 @@ export async function POST(request: NextRequest) {
     }
 
     const model = getModel();
-    const supabase = getSupabaseAdmin();
 
     const analysisPrompt = `
       You are a Senior Technical Interviewer. Analyze the following transcript.
@@ -66,34 +54,7 @@ export async function POST(request: NextRequest) {
     const cleanedText = text.replace(/```json|```/g, "").trim();
     const analysis = JSON.parse(cleanedText);
 
-    const interviewRecord = {
-      date: new Date().toISOString(),
-      duration: Number(duration.toFixed(2)),
-      avgResponseTime: Number(avgResponseTime.toFixed(2)),
-      scores: {
-        overall: analysis.overallScore,
-        technical: analysis.technicalDepth,
-        communication: analysis.communication,
-      },
-      strengths: analysis.strengths,
-      improvements: analysis.improvements,
-      actionableTips: analysis.actionableTips,
-      comparisonNotes: analysis.comparisonNotes,
-      summary: analysis.summary,
-      // Store full transcript if needed, but slice to avoid column limits
-      transcript: transcript.slice(0, 2000), 
-    };
-
-    // Keep only last 10 interviews to prevent DB row bloating
-    const updatedHistory = [...interviewHistory, interviewRecord].slice(-10);
-
-    const { error: updateError } = await supabase
-      .from('profiles')
-      .update({ interview_history: updatedHistory })
-      .eq('id', userId);
-
-    if (updateError) throw updateError;
-
+    // Return the payload to the frontend so it can save to Supabase
     return NextResponse.json({ success: true, analysis });
 
   } catch (error: any) {
