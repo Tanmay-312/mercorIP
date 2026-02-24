@@ -34,6 +34,13 @@ export async function POST(request: NextRequest) {
       
       Compare against recent history if available: ${JSON.stringify(interviewHistory.slice(-2))}
 
+      SCORING GUIDELINES:
+      - Provide scores on a scale of 1 to 10 (e.g., 8, 8.5, 9).
+      - Do NOT be overly harsh. A solid, acceptable interview should score at least a 7.5 or 8.
+      - A truly great interview should be a 9 or 10.
+      - Only give below a 5 for an extremely poor, non-responsive, or completely incorrect interview.
+      - Grade Technical Depth and Communication on the same generous scale.
+
       Output ONLY valid JSON with this schema:
       {
         "overallScore": number,

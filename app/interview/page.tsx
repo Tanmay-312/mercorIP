@@ -5,7 +5,12 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { WebcamPreview } from '@/components/WebcamPreview';
+import dynamic from 'next/dynamic';
+
+const WebcamPreview = dynamic(
+  () => import('@/components/WebcamPreview').then((mod) => mod.WebcamPreview),
+  { ssr: false, loading: () => <div className="w-full h-full bg-slate-900 border-2 border-slate-700 rounded-lg flex items-center justify-center"><p className="text-slate-500">Loading camera...</p></div> }
+);
 import { AudioWaveform } from '@/components/AudioWaveform';
 import { PacingIndicator } from '@/components/PacingIndicator';
 import { Video, Mic, Send, Loader2, StopCircle, Volume2, VolumeX, AlertCircle } from 'lucide-react';

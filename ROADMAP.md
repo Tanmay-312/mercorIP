@@ -8,6 +8,7 @@ The AI Interviewer is fully functional for standard candidate testing.
 - ☑️ Robust Vector Database RAG (Embeddings)
 - ☑️ Video/Facial Emotion Analytics
 - ☑️ Dynamic Tech-Stack Adapters
+- ☑️ Scoring Redefining (Fairer grading scales)
 
 ## Future Milestones (v2)
 
@@ -30,8 +31,3 @@ The AI Interviewer is fully functional for standard candidate testing.
 
 **Current limitation:** It evaluates candidates but doesn't suggest next steps.
 **Improvement:** Tie the final analytics output into a job board API (like LinkedIn or Indeed) to automatically surface roles the candidate is highly qualified for based on their interview performance.
-
-### 5. Scoring redefining
-
-**Current limitation:** The score given is always less than what it should have been (eg. despite a good interview, the score was 4/10, it should have been 8/10).
-**Improvement:** Redefine the scoring system to give a more accurate representation of the candidate's performance.
