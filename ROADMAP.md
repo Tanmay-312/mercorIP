@@ -1,25 +1,37 @@
 # 🗺️ Project Roadmap
 
-The AI Interviewer is fully functional for standard candidate testing, but there are several major expansions planned for future iterations.
+The AI Interviewer is fully functional for standard candidate testing.
 
-## Future Milestones
+## Completed Milestones (v1)
 
-### 1. 🗣️ Full Audio Synthesis (Text-to-Speech)
+- ☑️ Full Audio Synthesis (Text-to-Speech)
+- ☑️ Robust Vector Database RAG (Embeddings)
+- ☑️ Video/Facial Emotion Analytics
+- ☑️ Dynamic Tech-Stack Adapters
 
-**Current limitation:** The AI generates text responses which the candidate must read off the screen.
-**Improvement:** Integrate the Web Speech Synthesis API or a third-party pipeline (like ElevenLabs or OpenAI TTS) to give the AI Interviewer a literal voice, creating a completely screen-free phone-call-like experience.
+## Future Milestones (v2)
 
-### 2. 🗄️ Robust Vector Database RAG
+### 1. 👥 Multi-Agent Interview Panels
 
-**Current limitation:** The candidate's resume context is forcefully jammed into the system prompt's context window. If a resume is massive, this can blow out token limits.
-**Improvement:** Implement a RAG (Retrieval-Augmented Generation) pipeline. Chunk the resume on upload, store the embeddings in a Supabase pgvector column, and only pull the most relevant resume segments into the prompt based on the candidate's current conversational topic.
+**Current limitation:** The candidate is only interviewed by a single AI persona.
+**Improvement:** Introduce multiple AI agents acting as a panel (e.g., a Hiring Manager, a Senior Architect, and an HR Representative), each evaluating different vectors of the candidate's responses simultaneously.
 
-### 3. 📹 Video/Facial Emotion Analytics
+### 2. 💻 Integrated Code Editor (Live Coding)
 
-**Current limitation:** The web UI enables the user's camera but does practically nothing with the feed aside from rendering it to the screen.
-**Improvement:** Implement lightweight browser-side neural networks (like `face-api.js` or MediaPipe) to track candidate eye contact, micro-expressions, and visual confidence during the interview, looping this data back into the final analytical scorecard.
+**Current limitation:** The app evaluates verbal technical knowledge but cannot test raw coding ability.
+**Improvement:** Integrate a Monaco-based code editor and execution sandbox directly into the interview UI to allow live algorithmic problem-solving tests.
 
-### 4. 🔀 Dynamic Tech-Stack Adapters
+### 3. 💬 Slack & Discord Integrations
 
-**Current limitation:** The AI prompt is generalized as a "Senior Technical Interviewer".
-**Improvement:** Allow the user to select the specific _type_ of interview before starting (e.g., "System Design", "Frontend React Optimization", "Core Algorithms"). Route these selections natively to entirely different Gemini system prompts for vastly different interview vectors.
+**Current limitation:** Interview results are locked into the web dashboard.
+**Improvement:** Build webhooks and bot integrations to instantly push interview scorecards and summaries to a company's Slack or Discord channel the moment a candidate finishes.
+
+### 4. 🔗 Automated Job Matching
+
+**Current limitation:** It evaluates candidates but doesn't suggest next steps.
+**Improvement:** Tie the final analytics output into a job board API (like LinkedIn or Indeed) to automatically surface roles the candidate is highly qualified for based on their interview performance.
+
+### 5. Scoring redefining
+
+**Current limitation:** The score given is always less than what it should have been (eg. despite a good interview, the score was 4/10, it should have been 8/10).
+**Improvement:** Redefine the scoring system to give a more accurate representation of the candidate's performance.

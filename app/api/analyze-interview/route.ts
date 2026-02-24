@@ -17,7 +17,7 @@ const getModel = () => {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, transcript, duration, avgResponseTime, interviewHistory = [] } = body;
+    const { userId, transcript, duration, avgResponseTime, interviewHistory = [], facialEmotions = null } = body;
 
     if (!userId || !transcript) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
       
       TRANSCRIPT: ${transcript}
       METRICS: Duration ${duration}m, Avg Response ${avgResponseTime}s.
+      FACIAL ANALYTICS (Confidence/Nervousness): ${facialEmotions ? JSON.stringify(facialEmotions) : 'Not available'}
       
       Compare against recent history if available: ${JSON.stringify(interviewHistory.slice(-2))}
 

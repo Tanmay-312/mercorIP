@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from 'sonner';
 import { UserPlus, Loader2 } from 'lucide-react';
 
 export default function SignupPage() {
@@ -17,12 +17,12 @@ export default function SignupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+
 
     try {
       const { data: authData, error: authError } = await (supabase.auth as any).signUp({
@@ -48,9 +48,9 @@ export default function SignupPage() {
       }
     } catch (err: any) {
       if (err.message.includes('already registered')) {
-        setError('This email is already registered. Please login instead.');
+        toast.error('This email is already registered. Please login instead.');
       } else {
-        setError(err.message || 'Failed to create account. Please try again.');
+        toast.error(err.message || 'Failed to create account. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -73,11 +73,7 @@ export default function SignupPage() {
         </CardHeader>
         <form onSubmit={handleSignup}>
           <CardContent className="space-y-4">
-            {error && (
-              <Alert variant="destructive" className="bg-red-900/20 border-red-800">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
+
             <div className="space-y-2">
               <Label htmlFor="fullName" className="text-slate-200">Full Name</Label>
               <Input

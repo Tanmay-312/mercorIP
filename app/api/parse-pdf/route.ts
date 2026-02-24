@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-// Use the legacy build for better Node.js compatibility
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+
+// Polyfill Promise.withResolvers for Node 18/20 compatibility with pdfjs-dist v4+
+if (typeof (Promise as any).withResolvers === 'undefined') {
+  (Promise as any).withResolvers = function <T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: any) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,6 +21,9 @@ export async function POST(request: NextRequest) {
 
     const arrayBuffer = await file.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
+
+    // Dynamically import pdfjs AFTER polyfill has run
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
     const pdf = await pdfjs.getDocument({ data: uint8Array }).promise;
     let text = '';

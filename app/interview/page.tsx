@@ -8,7 +8,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { WebcamPreview } from '@/components/WebcamPreview';
 import { AudioWaveform } from '@/components/AudioWaveform';
 import { PacingIndicator } from '@/components/PacingIndicator';
-import { Video, Mic, Send, Loader2, StopCircle, Volume2, AlertCircle } from 'lucide-react';
+import { Video, Mic, Send, Loader2, StopCircle, Volume2, VolumeX, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function InterviewPage() {
   const router = useRouter();
@@ -19,10 +20,21 @@ export default function InterviewPage() {
   const [isListening, setIsListening] = useState(false);
   const [sending, setSending] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<any>(null);
   const [isEnding, setIsEnding] = useState(false);
+  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+
+  // Audio synthesis helper
+  const speakMsg = (text: string) => {
+    if (!isAudioEnabled || typeof window === 'undefined') return;
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    
+    synth.cancel(); // Stop current speech
+    const utterance = new SpeechSynthesisUtterance(text);
+    synth.speak(utterance);
+  };
 
   // Refs for logic (prevents stale closures)
   const recognitionRef = useRef<any>(null);
@@ -31,6 +43,13 @@ export default function InterviewPage() {
   const lastQuestionTimeRef = useRef(Date.now());
   const startTimeRef = useRef(Date.now());
   const fullTranscriptRef = useRef('');
+  
+  // Facial Analytics Ref
+  const emotionHistoryRef = useRef<any[]>([]);
+
+  const handleEmotionUpdate = (emotions: any) => {
+    emotionHistoryRef.current.push(emotions);
+  };
 
   const [lastResponseTime, setLastResponseTime] = useState(0);
   const [responseTimes, setResponseTimes] = useState<number[]>([]);
@@ -39,6 +58,7 @@ export default function InterviewPage() {
     setupInterview();
     return () => {
       recognitionRef.current?.stop();
+      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
       if (stream) stream.getTracks().forEach(t => t.stop());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,7 +81,7 @@ export default function InterviewPage() {
       // Initialize Speech Recognition
       const SpeechRecognition = (window as any).WebkitSpeechRecognition || (window as any).SpeechRecognition;
       if (!SpeechRecognition) {
-        setError("Speech Recognition not supported in this browser.");
+        toast.error("Speech Recognition not supported in this browser.");
         setLoading(false);
         return;
       }
@@ -84,11 +104,11 @@ export default function InterviewPage() {
       recognition.onerror = (event: any) => {
         console.error("Speech Error:", event.error);
         if (event.error === 'not-allowed') {
-          setError("Microphone access denied. Please allow microphone access.");
+          toast.error("Microphone access denied. Please allow microphone access.");
           setIsListening(false);
           isListeningRef.current = false;
         } else if (event.error === 'network') {
-          setError("Speech recognition network error. This browser may not support the API. Click the mic to try again.");
+          toast.error("Speech recognition network error. This browser may not support the API. Click the mic to try again.");
           setIsListening(false);
           isListeningRef.current = false;
         }
@@ -111,8 +131,9 @@ export default function InterviewPage() {
       const initialMessage = "Hello. I'm ready to begin. Please describe your experience with the technologies mentioned in your resume.";
       setMessages([{ role: 'assistant', content: initialMessage }]);
       fullTranscriptRef.current += `Interviewer: ${initialMessage}\n`;
+      // Don't auto-speak initial message here as it sometimes violates autoplay policies on fast navigation, wait for user input.
     } catch (err) {
-      setError("Please allow Camera and Microphone access.");
+      toast.error("Please allow Camera and Microphone access.");
     } finally {
       setLoading(false);
     }
@@ -136,7 +157,7 @@ export default function InterviewPage() {
     if (!finalInput || sending) return;
 
     setSending(true);
-    setError('');
+
 
     // Stop mic if it's still running
     if (isListening) {
@@ -170,7 +191,9 @@ export default function InterviewPage() {
            messages: updatedMessages,
            resumeContext: profile?.resume_metadata?.resumeText || "No resume provided.",
            detectedSkills: profile?.skills || [],
-           elapsedMinutes
+           elapsedMinutes,
+           interviewSettings: profile?.resume_metadata?.interview_settings || null,
+           resumeChunks: profile?.resume_metadata?.chunks || null
         }),
       });
 
@@ -180,8 +203,9 @@ export default function InterviewPage() {
       setMessages(prev => [...prev, { role: 'assistant', content: data.message }]);
       fullTranscriptRef.current += `Interviewer: ${data.message}\n`;
       lastQuestionTimeRef.current = Date.now();
+      speakMsg(data.message);
     } catch (err: any) {
-      setError("AI failed to respond. Please try again.");
+      toast.error("AI failed to respond. Please try again.");
       // Put text back if it failed
       setDisplayText(finalInput);
       transcriptRef.current = finalInput;
@@ -193,7 +217,7 @@ export default function InterviewPage() {
   const handleEndSession = async () => {
     if (isEnding) return;
     setIsEnding(true);
-    setError('');
+
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -204,6 +228,21 @@ export default function InterviewPage() {
       const durationMinutes = (Date.now() - startTimeRef.current) / 60000;
       const avgResponse = responseTimes.length > 0 ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length : 0;
 
+      // Calculate averaged facial expressions
+      let avgEmotions = null;
+      if (emotionHistoryRef.current.length > 0) {
+         const summary: any = {};
+         emotionHistoryRef.current.forEach(e => {
+            Object.keys(e).forEach(k => {
+               summary[k] = (summary[k] || 0) + e[k];
+            });
+         });
+         Object.keys(summary).forEach(k => {
+            summary[k] = Number((summary[k] / emotionHistoryRef.current.length).toFixed(4));
+         });
+         avgEmotions = summary;
+      }
+
       const res = await fetch('/api/analyze-interview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -212,7 +251,8 @@ export default function InterviewPage() {
           transcript: fullTranscriptRef.current,
           duration: durationMinutes,
           avgResponseTime: avgResponse,
-          interviewHistory: profile?.interview_history || []
+          interviewHistory: profile?.interview_history || [],
+          facialEmotions: avgEmotions
         }),
       });
 
@@ -251,7 +291,7 @@ export default function InterviewPage() {
 
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.message || "Failed to end session cleanly");
+      toast.error(err.message || "Failed to end session cleanly");
       setIsEnding(false);
     }
   };
@@ -285,9 +325,20 @@ export default function InterviewPage() {
             {/* AI Question Display */}
             <div className="space-y-6">
               <div className="flex justify-center">
-                <div className={`p-3 rounded-full bg-cyan-500/10 border border-cyan-500/20 ${sending ? 'animate-pulse' : ''}`}>
-                  <Volume2 className="w-8 h-8 text-cyan-400" />
-                </div>
+                <button 
+                  onClick={() => {
+                    setIsAudioEnabled(!isAudioEnabled);
+                    if (isAudioEnabled) window.speechSynthesis?.cancel();
+                  }}
+                  title={isAudioEnabled ? "Mute AI Voice" : "Enable AI Voice"}
+                  className={`p-3 rounded-full border transition-all ${
+                    isAudioEnabled 
+                      ? 'bg-cyan-500/10 border-cyan-500/20 hover:bg-cyan-500/20 text-cyan-400' 
+                      : 'bg-slate-800/50 border-slate-700 hover:bg-slate-700 text-slate-500'
+                  } ${sending && isAudioEnabled ? 'animate-pulse' : ''}`}
+                >
+                  {isAudioEnabled ? <Volume2 className="w-8 h-8" /> : <VolumeX className="w-8 h-8" />}
+                </button>
               </div>
               <h2 className="text-2xl md:text-4xl font-light text-center leading-relaxed text-slate-100 italic">
                 {messages[messages.length - 1]?.role === 'assistant' 
@@ -345,12 +396,6 @@ export default function InterviewPage() {
               </div>
             </div>
             
-            {error && (
-              <div className="flex items-center gap-2 justify-center text-red-400 bg-red-400/10 p-3 rounded-lg border border-red-400/20">
-                <AlertCircle className="w-4 h-4" />
-                <span className="text-sm">{error}</span>
-              </div>
-            )}
           </div>
         </div>
 
@@ -358,8 +403,12 @@ export default function InterviewPage() {
         <div className="hidden lg:flex col-span-4 border-l border-slate-800 bg-slate-900/80 backdrop-blur-xl p-6 flex-col space-y-8">
           <div className="space-y-4">
              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Candidate Monitor</h3>
-             <div className="rounded-2xl overflow-hidden bg-black aspect-video border border-slate-800 shadow-2xl">
-               <WebcamPreview stream={stream} />
+             <div className="rounded-2xl overflow-hidden bg-black aspect-video border border-slate-800 shadow-2xl relative">
+               <WebcamPreview stream={stream} onEmotionUpdate={handleEmotionUpdate} />
+               <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-black/60 px-2 py-1 rounded border border-white/10 backdrop-blur-md">
+                 <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                 <span className="text-[8px] font-mono text-cyan-400">TRACKING</span>
+               </div>
              </div>
           </div>
 

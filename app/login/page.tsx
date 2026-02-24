@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from 'sonner';
 import { LogIn, Loader2 } from 'lucide-react';
 import { createBrowserClient } from '@supabase/ssr';
 
@@ -17,7 +17,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+
 
   // Initialize the specific SSR Browser Client
   const supabase = createBrowserClient(
@@ -28,7 +28,7 @@ export default function LoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -50,7 +50,7 @@ export default function LoginPage() {
         }, 100);
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to login.');
+      toast.error(err.message || 'Failed to login.');
     } finally {
       setLoading(false);
     }
@@ -72,11 +72,7 @@ export default function LoginPage() {
         </CardHeader>
         <form onSubmit={handleLogin}>
           <CardContent className="space-y-4">
-            {error && (
-              <Alert variant="destructive" className="bg-red-900/20 border-red-800">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
+
             <div className="space-y-2">
               <Label htmlFor="email" className="text-slate-200">Email</Label>
               <Input

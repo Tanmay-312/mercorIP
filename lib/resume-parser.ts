@@ -30,8 +30,14 @@ export async function parseResume(file: File): Promise<ResumeData> {
       body: formData,
     });
 
+    if (!response.ok) {
+        const errText = await response.text();
+        console.error("PDF Parsing Server Error:", errText);
+        throw new Error(`PDF Parsing failed: ${response.statusText}`);
+    }
+
     const data = await response.json();
-    text = data.text;
+    text = data.text || '';
   } else if (file.type === 'application/json') {
     const content = await file.text();
     const jsonData = JSON.parse(content);

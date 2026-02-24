@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { parseResume } from '@/lib/resume-parser';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from 'sonner';
 import { Upload, FileText, Loader2, Video, LogOut, BarChart3 } from 'lucide-react';
 
 export default function Home() {
@@ -15,8 +15,12 @@ export default function Home() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
   const [dragActive, setDragActive] = useState(false);
+  
+  // Dynamic Interview Settings
+  const [interviewType, setInterviewType] = useState('Technical');
+  const [experienceLevel, setExperienceLevel] = useState('Mid-Level');
+  const [starting, setStarting] = useState(false);
 
   useEffect(() => {
     checkUser();
@@ -58,14 +62,53 @@ export default function Home() {
     router.push('/login');
   };
 
+  const handleStartInterview = async () => {
+    if (!user) return;
+    setStarting(true);
+    try {
+      const updatedMetadata = {
+         ...(profile.resume_metadata || {}),
+         interview_settings: {
+           type: interviewType,
+           level: experienceLevel
+         }
+      };
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ resume_metadata: updatedMetadata })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+      router.push('/interview');
+    } catch (err: any) {
+      toast.error('Failed to save interview settings.');
+      setStarting(false);
+    }
+  };
+
   const handleFileUpload = async (file: File) => {
     if (!user) return;
 
     setUploading(true);
-    setError('');
+
 
     try {
       const resumeData = await parseResume(file);
+      
+      let chunks = [];
+      try {
+        const embedRes = await fetch('/api/embed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: resumeData.text })
+        });
+        if (embedRes.ok) {
+          const data = await embedRes.json();
+          if (data.chunks) chunks = data.chunks;
+        }
+      } catch (e) {
+        console.error("Embed failed", e);
+      }
 
       const { error: updateError } = await supabase
         .from('profiles')
@@ -75,6 +118,7 @@ export default function Home() {
           resume_metadata: {
             ...resumeData.metadata,
             resumeText: resumeData.text,
+            chunks: chunks
           },
         })
         .eq('id', user.id);
@@ -82,9 +126,9 @@ export default function Home() {
       if (updateError) throw updateError;
 
       await checkUser();
-      alert('Resume uploaded successfully! You can now start your interview.');
+      toast.success('Resume uploaded successfully! You can now start your interview.');
     } catch (err: any) {
-      setError(err.message || 'Failed to upload resume. Please try again.');
+      toast.error(err.message || 'Failed to upload resume. Please try again.');
     } finally {
       setUploading(false);
     }
@@ -169,11 +213,7 @@ export default function Home() {
             </p>
           </div>
 
-          {error && (
-            <Alert variant="destructive" className="bg-red-900/20 border-red-800">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+
 
           <Card className="bg-slate-800/50 border-slate-700">
             <CardHeader>
@@ -231,7 +271,7 @@ export default function Home() {
               </div>
 
               {hasResume && (
-                <div className="mt-6 p-4 bg-green-900/20 border border-green-800 rounded-lg">
+                <div className="mt-6 p-4 bg-green-900/20 border border-green-800 rounded-lg space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <FileText className="w-5 h-5 text-green-400" />
@@ -242,11 +282,46 @@ export default function Home() {
                         </p>
                       </div>
                     </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4 mt-4 bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                     <div className="space-y-2 text-left">
+                        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Interview Type</label>
+                        <select 
+                           value={interviewType} 
+                           onChange={(e) => setInterviewType(e.target.value)}
+                           className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                        >
+                           <option value="Technical">Technical</option>
+                           <option value="System Design">System Design</option>
+                           <option value="Behavioral">Behavioral</option>
+                           <option value="Frontend">Frontend Architecture</option>
+                           <option value="Backend">Backend Architecture</option>
+                        </select>
+                     </div>
+                     <div className="space-y-2 text-left">
+                        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Experience</label>
+                        <select 
+                           value={experienceLevel} 
+                           onChange={(e) => setExperienceLevel(e.target.value)}
+                           className="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-lg p-2 focus:ring-2 focus:ring-cyan-500 focus:outline-none"
+                        >
+                           <option value="Junior">Junior (0-2 YOE)</option>
+                           <option value="Mid-Level">Mid-Level (3-5 YOE)</option>
+                           <option value="Senior">Senior (5-8 YOE)</option>
+                           <option value="Lead/Staff">Lead / Staff (8+ YOE)</option>
+                        </select>
+                     </div>
+                  </div>
+
+                  <div className="pt-2">
                     <Button
-                      onClick={() => router.push('/interview')}
-                      className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600"
+                      onClick={handleStartInterview}
+                      disabled={starting}
+                      className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 font-bold shadow-lg text-white"
                     >
-                      Start Interview
+                      {starting ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
+                      Start {interviewType} Interview
                     </Button>
                   </div>
                 </div>
