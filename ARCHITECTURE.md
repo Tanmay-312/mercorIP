@@ -26,19 +26,43 @@ graph TD
 graph TD
     classDef frontend fill:#3b82f6,stroke:#1d4ed8,stroke-width:2px,color:#fff;
     classDef backend fill:#10b981,stroke:#047857,stroke-width:2px,color:#fff;
+    classDef external fill:#f59e0b,stroke:#d97706,stroke-width:2px,color:#fff;
 
+    %% Frontend Components
     page[<code>app/interview/page.tsx</code>]:::frontend
-    webcam[<code>WebcamPreview.tsx</code> (face-api.js)]:::frontend
+    webcam[<code>WebcamPreview.tsx</code>]:::frontend
+    hooks[<code>useSpeech.ts / useFace.ts</code>]:::frontend
+
+    %% Backend / API Routes
     apiChat[<code>/api/chat</code>]:::backend
     apiEmbed[<code>/api/embed</code>]:::backend
-    apiAnalyze[<code>/api/analyze-interview</code>]:::backend
+    apiAnalyze[<code>/api/analyze</code>]:::backend
 
-    page -->|Facial Tracking| webcam
-    page -->|User Voice (SpeechRecognition)| apiChat
-    apiChat -->|AI Context Vector Search| Supabase
-    apiChat -->|TTS Response| page
-    page -->|Resume File| apiEmbed
-    page -->|End Session Stats| apiAnalyze
+    %% External & DB
+    Supabase[(Supabase DB/Auth)]:::external
+    Gemini[Google Gemini API]:::external
+
+    %% Logic Flow
+    page --> webcam
+    page --> hooks
+
+    %% RAG / Resume Flow
+    page -->|PDF Text| apiEmbed
+    apiEmbed -->|text-embedding-004| Gemini
+    apiEmbed -->|Vector Chunks| page
+    page -->|Store Session Data| Supabase
+
+    %% Interview Loop
+    hooks -->|Transcript + Emotion| page
+    page -->|Context + User Input| apiChat
+    apiChat -->|RAG Prompt| Gemini
+    apiChat -->|AI Text Response| page
+    page -->|Web Speech API| hooks
+
+    %% Final Analysis
+    page -->|Session Log| apiAnalyze
+    apiAnalyze -->|JSON Scorecard| Gemini
+    apiAnalyze -->|Final Stats| Supabase
 ```
 
 ## 3. User & Use Case Flow
